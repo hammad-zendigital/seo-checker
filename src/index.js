@@ -75,7 +75,9 @@ module.exports = {
         accessibleImgs++;
       }
     });
-    page.imgAccessibility = (accessibleImgs / totalImgs) * 100;
+    page.totalImages = totalImgs;
+    page.missingAltOrTitleFromImage = totalImgs - accessibleImgs;
+    //page.imgAccessibility = (accessibleImgs / totalImgs) * 100;
     return page;
   },
   
@@ -103,41 +105,59 @@ module.exports = {
   crawl: function(url, options, callback) {
     var crawler       = Crawler.crawl(url.toLowerCase()),
         opts          = options || {},
-        maxPages      = opts.maxPages || 10,
+        urls = [],//[Hammad] Removed the maxPages Variable as it is no longer in use.
         parsedPages   = [],         // Store parsed pages in this array
         seoParser     = this.meta,  // Reference to `meta` method to call during crawl
         crawlResults  = [];         // Store results in this array and then return it to caller
 
-    // Crawler settings
-    crawler.interval            = opts.interval || 250;         // Time between spooling up new requests
-    crawler.maxDepth            = opts.depth || 2;              // Maximum deptch of crawl
-    crawler.maxConcurrency      = opts.concurrency || 2;        // Number of processes to spawn at a time
-    crawler.timeout             = opts.timeout || 1000;         // Milliseconds to wait for server to send headers
-    crawler.downloadUnsupported = opts.unsupported || false;    // Save resources by only downloading files Simple Crawler can parse
-                                                                // The user agent string to provide - Be cool and don't trick people
-    crawler.userAgent           = opts.useragent || 'SEO Checker v1 (https://github.com/Clever-Labs/seo-checker)';
+    //[Hammad] Removed all un-used checks and now using crawl defauls
+    crawler.userAgent = opts.useragent || 'SEO Checker v1 (https://github.com/Clever-Labs/seo-checker)';
 
-    // Only fetch HTML! You should always set this option unless you have a good reason not to
-    if (opts.htmlOnly === true) { // Being explicit about truthy values here
+    if (opts.ignoreAssets === true) { //[Hammad] Just updated the variable name
       var htmlCondition = crawler.addFetchCondition(function(parsedURL) {
-        return !parsedURL.path.match(/\.jpg|jpeg|png|gif|js|txt|css|pdf$/i);
+        return !parsedURL.path.match(/\.jpg|jpeg|png|gif|js|txt|css|pdf|svg$/i); //[Hammad] svg check added.
       });
     }
 
     crawler.on('fetchcomplete', function(queueItem, responseBuffer, response) {
-      if (queueItem.stateData.code === 200) {
-        crawlResults.push({ url: queueItem.url, body: responseBuffer.toString() });
-      }
-      if (crawlResults.length >= maxPages) {
-        this.stop(); // Stop the crawler
-        crawlResults.forEach(function(page, index, results) {
-          parsedPages.push({url: page.url, results: seoParser(page.body)});
+
+      if (queueItem.stateData.code === 200 && urls.indexOf(queueItem.url) == -1) { //[Hammad] Duplicate URL Check added
+        urls.push(queueItem.url);
+        console.log("Indexed: " + queueItem.url);
+        crawlResults.push({
+          url: queueItem.url,
+          referrer: queueItem.referrer, //[Hammad] Referrer added to response object
+          status: queueItem.stateData.code, ////[Hammad] Status code added to response object
+          body: responseBuffer.toString()
         });
-        if (!callback) {
-          return parsedPages;
-        } else {
-          callback(parsedPages);
-        }
+      }
+
+    }).on('fetch404', function(queueItem, response) { //[Hammad] 404 event handler added.
+
+      console.log(response.statusCode + ' for "' + queueItem.url + '" from:"' + queueItem.referrer + '"');
+      crawlResults.push({
+        url: queueItem.url,
+        referrer: queueItem.referrer,
+        status: queueItem.stateData.code,
+        body: ''
+      });
+    }).on('complete', function(queueItem) { //[Hammad] Final object i.e. parsedPages creation moved from fetchComplete event to complete event.
+
+      crawlResults.forEach(function(page, index, results) {
+
+        parsedPages.push({
+          url: page.url,
+          status: page.status,
+          referrer: page.referrer,
+          results: seoParser(page.body)
+        });
+
+      });
+
+      if (!callback) {
+        return parsedPages;
+      } else {
+        callback(parsedPages);
       }
     });
   }
